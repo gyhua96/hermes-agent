@@ -243,6 +243,13 @@ module.exports = {
   portable: {
     artifactName: process.env.HERMES_PORTABLE_NAME || 'Hermes-Agent-3.2.0-win-x64.exe'
   },
+  nsis: {
+    oneClick: false,
+    allowToChangeInstallationDirectory: true,
+    perMachine: false,
+    createDesktopShortcut: true,
+    createStartMenuShortcut: true
+  },
   msix: {
     // A store build uses the Partner Center packaging identity (the Store
     // re-signs + rewrites the publisher on submission); everything else uses

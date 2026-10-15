@@ -67,8 +67,7 @@ jobs:
         env:
           PYTHONUTF8: '1'
           HERMES_DESKTOP_VARIANT: 'bundled'
-          HERMES_WIN_TARGET: 'portable'
-          HERMES_PORTABLE_NAME: 'Hermes-Agent-3.2.0-win-x64.exe'
+          HERMES_WIN_TARGET: 'zip,nsis'
           HERMES_OFFLINE: '1'
         run: |
           $sha = (git rev-parse HEAD).Trim()
@@ -85,20 +84,31 @@ jobs:
           Get-ChildItem -Path "apps/desktop/release" -Recurse | ForEach-Object {
             Write-Host "$($_.FullName) ($([math]::Round($_.Length / 1MB, 2)) MB)"
           }
-          $exe = Get-ChildItem -Path "apps/desktop/release" -Filter "*.exe" | Select-Object -First 1
-          if ($exe) {
-            $target = "apps/desktop/release/Hermes-Agent-3.2.0-win-x64.exe"
-            if ($exe.FullName -ne (Resolve-Path $target -ErrorAction SilentlyContinue)) {
-              Copy-Item -Path $exe.FullName -Destination $target -Force
-              Write-Host "Normalized artifact name to: $target"
+          # Normalize names
+          $zip = Get-ChildItem -Path "apps/desktop/release" -Filter "*.zip" | Select-Object -First 1
+          if ($zip) {
+            $zipTarget = "apps/desktop/release/Hermes-Agent-3.2.0-win-x64-Portable.zip"
+            if ($zip.FullName -ne (Resolve-Path $zipTarget -ErrorAction SilentlyContinue)) {
+              Move-Item -Path $zip.FullName -Destination $zipTarget -Force
+              Write-Host "Normalized zip artifact to: $zipTarget"
+            }
+          }
+          $nsis = Get-ChildItem -Path "apps/desktop/release" -Filter "*.exe" | Select-Object -First 1
+          if ($nsis) {
+            $nsisTarget = "apps/desktop/release/Hermes-Agent-Setup-3.2.0-win-x64.exe"
+            if ($nsis.FullName -ne (Resolve-Path $nsisTarget -ErrorAction SilentlyContinue)) {
+              Move-Item -Path $nsis.FullName -Destination $nsisTarget -Force
+              Write-Host "Normalized nsis installer to: $nsisTarget"
             }
           }
 
-      - name: Upload Artifact
+      - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Hermes-Agent-3.2.0-win-x64-Portable
-          path: apps/desktop/release/Hermes-Agent-3.2.0-win-x64.exe
+          name: Hermes-Agent-3.2.0-win-x64-Packages
+          path: |
+            apps/desktop/release/*.zip
+            apps/desktop/release/*.exe
           if-no-files-found: error
 
       - name: Create GitHub Release
@@ -106,16 +116,19 @@ jobs:
         if: ${{ always() }}
         with:
           tag_name: ${{ github.event.inputs.tag || 'v3.2.0' }}
-          name: "Hermes Agent Desktop v3.2.0 (Windows Portable 离线版)"
+          name: "Hermes Agent Desktop v3.2.0 (Windows 纯离线安装版 & 免安装绿色版)"
           body: |
-            ### Hermes Desktop Windows 纯离线便携版 (Portable)
-            - **文件名**: `Hermes-Agent-3.2.0-win-x64.exe`
-            - **架构**: Windows x64
-            - **离线特性**:
-              - 内置 Windows 专用 CPython 运行时与完整预编译 site-packages。
-              - 内置 node-pty、ConPTY 终端与 Git for Windows 支持。
-              - 完全脱离公网依赖，无任何开机下载或环境拉取。
-              - 绿色免安装，开箱即用。
-          files: apps/desktop/release/Hermes-Agent-3.2.0-win-x64.exe
+            ### Hermes Desktop Windows 纯离线客户端
+            提供两种无网部署形式，均已打包完整离线运行时（Python 解释器、全量依赖库、内置终端）：
+
+            1. **`Hermes-Agent-3.2.0-win-x64-Portable.zip` (强烈推荐：真正免安装绿色版)**
+               - 解压到任意目录（如 `D:\Hermes` 或 U 盘）即可直接双击 `Hermes.exe` 启动。
+               - **秒开窗口**，避免单文件 exe 每次开机静默往临时目录解压 5GB 文件的卡顿与巨量磁盘 I/O。
+            
+            2. **`Hermes-Agent-Setup-3.2.0-win-x64.exe` (离线安装包)**
+               - 包含解压进度提示的安装程序，安装后可在开始菜单和桌面生成快捷方式。
+          files: |
+            apps/desktop/release/Hermes-Agent-3.2.0-win-x64-Portable.zip
+            apps/desktop/release/Hermes-Agent-Setup-3.2.0-win-x64.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

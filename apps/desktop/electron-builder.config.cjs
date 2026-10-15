@@ -93,7 +93,7 @@ module.exports = {
   // var (local, or a fork without the R2 vars) keep the github provider, which
   // is exactly today's behavior. The store build has no feed at all (the Store
   // owns its distribution and updates).
-  publish: channelRequest ? null : !channel
+  publish: process.env.HERMES_OFFLINE === '1' ? null : channelRequest ? null : !channel
     ? null
     : [
         publicUrl
@@ -233,12 +233,15 @@ module.exports = {
   win: {
     executableName: windowsExecutableName,
     legalTrademarks: displayName,
-    target: ['msix'],
+    target: process.env.HERMES_WIN_TARGET ? process.env.HERMES_WIN_TARGET.split(',') : ['msix'],
     // The updaters' relaunch waiter is PowerShell run outside the package. The
     // sealed payload's snapshot omits scripts/, so it ships as a resource
     // (RELAUNCH_WAITER_SCRIPT in electron/updater/relaunch-waiter.ts).
     extraResources: [{ from: 'scripts/update-relaunch-waiter.ps1', to: 'update-relaunch-waiter.ps1' }],
     ...windowsSigning()
+  },
+  portable: {
+    artifactName: process.env.HERMES_PORTABLE_NAME || 'Hermes-Agent-3.2.0-win-x64.exe'
   },
   msix: {
     // A store build uses the Partner Center packaging identity (the Store

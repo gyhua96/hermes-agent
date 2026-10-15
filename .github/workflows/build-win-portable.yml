@@ -1,0 +1,113 @@
+name: Build Hermes Desktop Windows Portable
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to build'
+        required: true
+        default: 'v3.2.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: Build Windows x64 Portable
+    runs-on: windows-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Git identity
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Exclude Defender Paths
+        shell: powershell
+        run: |
+          try {
+            Add-MpPreference -ExclusionPath $env:GITHUB_WORKSPACE
+            Add-MpPreference -ExclusionPath $env:RUNNER_TEMP
+            Set-MpPreference -DisableRealtimeMonitoring $true
+            Write-Host "Disabled Realtime Monitoring and added Defender exclusions."
+          } catch {
+            Write-Host "Defender exclusion notice: $($_.Exception.Message)"
+          }
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Set up PM toolchain
+        uses: ./.github/actions/setup-pm
+        with:
+          toolchain: all
+          archive-inputs: false
+          cache: true
+          save-tools-cache: true
+
+      - name: Install Windows bundle tooling
+        run: |
+          npm ci --workspace apps/desktop --include-workspace-root --include=dev --ignore-scripts --no-audit --no-fund
+
+      - name: Build Bundled Portable Executable
+        shell: powershell
+        env:
+          PYTHONUTF8: '1'
+          HERMES_DESKTOP_VARIANT: 'bundled'
+          HERMES_WIN_TARGET: 'portable'
+          HERMES_PORTABLE_NAME: 'Hermes-Agent-3.2.0-win-x64.exe'
+          HERMES_OFFLINE: '1'
+        run: |
+          $sha = (git rev-parse HEAD).Trim()
+          Write-Host "Admitted revision: $sha"
+          
+          # Clean git status check required by require_source
+          git status
+          
+          python scripts/bundles/desktop.py --commit $sha --variant bundled --clean
+
+      - name: Verify and list output artifacts
+        shell: powershell
+        run: |
+          Get-ChildItem -Path "apps/desktop/release" -Recurse | ForEach-Object {
+            Write-Host "$($_.FullName) ($([math]::Round($_.Length / 1MB, 2)) MB)"
+          }
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Hermes-Agent-3.2.0-win-x64-Portable
+          path: apps/desktop/release/Hermes-Agent-3.2.0-win-x64.exe
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: ${{ always() }}
+        with:
+          tag_name: ${{ github.event.inputs.tag || 'v3.2.0' }}
+          name: "Hermes Agent Desktop v3.2.0 (Windows Portable 离线版)"
+          body: |
+            ### Hermes Desktop Windows 纯离线便携版 (Portable)
+            - **文件名**: `Hermes-Agent-3.2.0-win-x64.exe`
+            - **架构**: Windows x64
+            - **离线特性**:
+              - 内置 Windows 专用 CPython 运行时与完整预编译 site-packages。
+              - 内置 node-pty、ConPTY 终端与 Git for Windows 支持。
+              - 完全脱离公网依赖，无任何开机下载或环境拉取。
+              - 绿色免安装，开箱即用。
+          files: apps/desktop/release/Hermes-Agent-3.2.0-win-x64.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

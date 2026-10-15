@@ -60,7 +60,7 @@ export function validatePreparedBuilderArgs(args, inputs) {
     }
     if (arg === '--dir' || arg === '--publish=never' || arg === '--') continue
     if (/^(?:-c|--config)\.(?:extraMetadata\.(?:version|shortVersion|shortVersionWindows)|directories\.output|mac\.identity)=/.test(arg)) continue
-    if (!arg.startsWith('-') && inputs.formats.includes(arg)) continue
+    if (!arg.startsWith('-') && (inputs.formats.includes(arg) || arg.split(',').every(f => inputs.formats.includes(f)))) continue
     throw preparationRequired(`Argument is not admitted by prepared packaging: ${arg}`)
   }
 }

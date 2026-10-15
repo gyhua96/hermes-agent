@@ -85,6 +85,14 @@ jobs:
           Get-ChildItem -Path "apps/desktop/release" -Recurse | ForEach-Object {
             Write-Host "$($_.FullName) ($([math]::Round($_.Length / 1MB, 2)) MB)"
           }
+          $exe = Get-ChildItem -Path "apps/desktop/release" -Filter "*.exe" | Select-Object -First 1
+          if ($exe) {
+            $target = "apps/desktop/release/Hermes-Agent-3.2.0-win-x64.exe"
+            if ($exe.FullName -ne (Resolve-Path $target -ErrorAction SilentlyContinue)) {
+              Copy-Item -Path $exe.FullName -Destination $target -Force
+              Write-Host "Normalized artifact name to: $target"
+            }
+          }
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4

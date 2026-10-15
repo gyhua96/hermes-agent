@@ -169,9 +169,10 @@ export function runElectronBuilder(args, { spawn = spawnSync } = {}) {
 /** @param {string[]} args @returns {string[]} */
 function sourceFormats(args) {
   if (args.includes('--dir')) return ['dir']
-  const formats = args.filter(arg => ['dmg', 'zip', 'msix', 'AppImage', 'deb', 'rpm'].includes(arg))
+  const formats = args.filter(arg => ['dmg', 'zip', 'msix', 'AppImage', 'deb', 'rpm', 'portable', 'nsis'].includes(arg))
   const platform = selectedPlatform(args)
-  return formats.length ? formats : platform === 'darwin' ? ['dmg', 'zip'] : platform === 'win32' ? ['msix'] : ['AppImage']
+  const defaultWin = process.env.HERMES_WIN_TARGET ? process.env.HERMES_WIN_TARGET.split(',') : ['msix']
+  return formats.length ? formats : platform === 'darwin' ? ['dmg', 'zip'] : platform === 'win32' ? defaultWin : ['AppImage']
 }
 
 if (isMain(import.meta.url)) process.exitCode = runElectronBuilder(process.argv.slice(2))

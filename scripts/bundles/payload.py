@@ -138,7 +138,21 @@ def relativize_links(root: Path) -> int:
     """Only dependency-venv links move; framework links belong to codesign."""
     root = root.resolve()
     _discard_build_locks(root)
-    return sum(_relativize_bin_links(root, root / name / "bin") for name in ("venv", "pm-runtime"))
+    for venv_name in ("venv", "pm-runtime"):
+        cfg = root / venv_name / "pyvenv.cfg"
+        if cfg.is_file():
+            lines = cfg.read_text(encoding="utf-8-sig").splitlines()
+            for i, line in enumerate(lines):
+                k, sep, v = line.partition("=")
+                if k.strip() == "home":
+                    target_path = Path(v.strip())
+                    if target_path.is_absolute() and "tools" in target_path.parts:
+                        parts = target_path.parts
+                        rel_tools = root.joinpath(*parts[parts.index("tools"):])
+                        lines[i] = f"home = {os.path.relpath(rel_tools, root / venv_name)}"
+            cfg.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    bin_names = ("bin", "Scripts") if os.name == "nt" else ("bin",)
+    return sum(_relativize_bin_links(root, root / name / b) for name in ("venv", "pm-runtime") for b in bin_names)
 
 
 def _relativize_bin_links(root: Path, directory: Path) -> int:

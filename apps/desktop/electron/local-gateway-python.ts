@@ -62,6 +62,7 @@ class TicketBridge {
   private pending = new Map<number, PendingTicket>()
   private sequence = 0
   private output = ''
+  private lastStderr = ''
   private idleTimer?: ReturnType<typeof setTimeout>
   private closed = false
 
@@ -69,12 +70,24 @@ class TicketBridge {
     this.child = spawn(command, ['-P', '-u', '-c', TICKET_SCRIPT], hiddenWindowsChildOptions({
       cwd, env, shell: false, stdio: ['pipe', 'pipe', 'pipe']
     }))
-    this.child.stderr.resume()
+    this.child.stderr.setEncoding('utf8')
+    this.child.stderr.on('data', (data: string) => {
+      this.lastStderr = (this.lastStderr + data).slice(-4096)
+    })
     this.child.stdout.setEncoding('utf8')
     this.child.stdout.on('data', data => this.receive(String(data)))
-    this.child.on('error', () => this.dispose())
-    this.child.stdin.on('error', () => this.dispose())
-    this.child.on('close', () => this.dispose())
+    this.child.on('error', (err: Error) => {
+      console.error('[hermes] TicketBridge error:', err)
+      this.dispose(err.message)
+    })
+    this.child.stdin.on('error', (err: Error) => {
+      console.error('[hermes] TicketBridge stdin error:', err)
+      this.dispose(err.message)
+    })
+    this.child.on('close', (code: number | null) => {
+      const msg = code !== 0 ? `closed with code ${code}${this.lastStderr ? `: ${this.lastStderr.trim()}` : ''}` : undefined
+      this.dispose(msg)
+    })
   }
 
   request(endpoint: TicketEndpoint, purpose: 'interactive' | 'native-http' | 'native-profile-create'): Promise<string> {
@@ -134,16 +147,17 @@ class TicketBridge {
     if (!this.pending.size) { this.idleTimer = setTimeout(() => this.dispose(), 30_000) }
   }
 
-  dispose(): void {
+  dispose(reason?: string): void {
     if (this.closed) { return }
     this.closed = true
     clearTimeout(this.idleTimer)
 
     if (bridges.get(this.key) === this) { bridges.delete(this.key) }
 
+    const err = new Error(reason ? `Gateway ticket bootstrap failed: ${reason}` : 'Gateway ticket bootstrap failed')
     for (const waiter of this.pending.values()) {
       clearTimeout(waiter.timer)
-      waiter.reject(new Error('Gateway ticket bootstrap failed'))
+      waiter.reject(err)
     }
 
     this.pending.clear()
@@ -158,11 +172,13 @@ export function closeGatewayTicketBridges(): void {
 }
 
 interface ResolvedTicketBackend {
-  command: string
+  command: string | null
   kind: string
+  python?: string | null
   shell?: boolean
   env?: NodeJS.ProcessEnv
   root?: string
+  local?: string
 }
 
 const RUNTIME_COMMAND_TIMEOUT_MS = 30_000
@@ -221,12 +237,22 @@ function isFile(candidate: string): boolean {
  * PYTHONPATH is its whole import closure (-P still keeps the cwd out).
  */
 export async function ticketRuntimeFor(backend: ResolvedTicketBackend): Promise<{ command: string; env?: NodeJS.ProcessEnv }> {
-  if (backend.kind === 'python' && !backend.shell) {
-    return backend
+  if (backend.python) {
+    return {
+      command: backend.python,
+      env: {
+        ...backend.env,
+        PYTHONPATH: backend.env?.PYTHONPATH || backend.root
+      }
+    }
   }
 
-  if (backend.kind === 'command' && backend.root) {
-    const python = await launcherRuntimePython({ ...backend, root: backend.root })
+  if (backend.kind === 'python' && !backend.shell && backend.command) {
+    return backend as { command: string; env?: NodeJS.ProcessEnv }
+  }
+
+  if (backend.kind === 'command' && backend.root && backend.command) {
+    const python = await launcherRuntimePython({ ...backend, command: backend.command, root: backend.root })
 
     return { command: python, env: { ...backend.env, PYTHONPATH: backend.root } }
   }

@@ -5017,8 +5017,13 @@ async function resolveHermesBackend(backendArgs: string[]): Promise<ResolvedHerm
       kind: 'python',
       label: `bundled payload at ${payload.root}`,
       command: payload.shim,
+      python: payload.storePython,
       args: [...backendArgs],
-      env: { ...buildDesktopBackendEnv(), HERMES_RUNTIME_DIR: payload.toolsDir },
+      env: {
+        ...buildDesktopBackendEnv(),
+        HERMES_RUNTIME_DIR: payload.toolsDir,
+        PYTHONPATH: payloadPythonPath(payload)
+      },
       root: payload.repoDir,
       bootstrap: false,
       shell: false,
@@ -5197,6 +5202,7 @@ interface ResolvedHermesBackend {
   kind: string
   label: string
   command: string | null
+  python?: string | null
   args: string[]
   env: NodeJS.ProcessEnv
   bootstrap: boolean

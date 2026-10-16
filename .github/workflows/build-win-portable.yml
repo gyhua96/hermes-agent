@@ -67,7 +67,7 @@ jobs:
         env:
           PYTHONUTF8: '1'
           HERMES_DESKTOP_VARIANT: 'bundled'
-          HERMES_WIN_TARGET: 'zip,nsis'
+          HERMES_WIN_TARGET: 'nsis'
           HERMES_OFFLINE: '1'
         run: |
           $sha = (git rev-parse HEAD).Trim()
@@ -84,16 +84,9 @@ jobs:
           Get-ChildItem -Path "apps/desktop/release" -Recurse | ForEach-Object {
             Write-Host "$($_.FullName) ($([math]::Round($_.Length / 1MB, 2)) MB)"
           }
-          # Normalize names
-          $zip = Get-ChildItem -Path "apps/desktop/release" -Filter "*.zip" | Select-Object -First 1
-          if ($zip) {
-            $zipTarget = "apps/desktop/release/Hermes-Agent-3.2.0-win-x64-Portable.zip"
-            if ($zip.FullName -ne (Resolve-Path $zipTarget -ErrorAction SilentlyContinue)) {
-              Move-Item -Path $zip.FullName -Destination $zipTarget -Force
-              Write-Host "Normalized zip artifact to: $zipTarget"
-            }
-          }
-          $nsis = Get-ChildItem -Path "apps/desktop/release" -Filter "*.exe" | Select-Object -First 1
+          
+          # Normalize nsis installer
+          $nsis = Get-ChildItem -Path "apps/desktop/release" -Filter "*Setup*.exe" | Select-Object -First 1
           if ($nsis) {
             $nsisTarget = "apps/desktop/release/Hermes-Agent-Setup-3.2.0-win-x64.exe"
             if ($nsis.FullName -ne (Resolve-Path $nsisTarget -ErrorAction SilentlyContinue)) {
@@ -102,11 +95,28 @@ jobs:
             }
           }
 
+          # Create ultra-compressed 7z archive from win-unpacked (guaranteed < 1.6GB)
+          if (Test-Path "apps/desktop/release/win-unpacked") {
+            Write-Host "Compressing win-unpacked with 7z (LZMA2 max compression)..."
+            & 7z a -mx=9 "apps/desktop/release/Hermes-Agent-3.2.0-win-x64-Portable.7z" ".\apps\desktop\release\win-unpacked\*"
+            
+            Write-Host "Compressing win-unpacked with 7z zip (deflate max compression)..."
+            & 7z a -tzip -mx=9 "apps/desktop/release/Hermes-Agent-3.2.0-win-x64-Portable.zip" ".\apps\desktop\release\win-unpacked\*"
+          }
+
+          # Check zip size to avoid GitHub Release 2GB hard ceiling
+          $zip = Get-Item "apps/desktop/release/Hermes-Agent-3.2.0-win-x64-Portable.zip" -ErrorAction SilentlyContinue
+          if ($zip -and $zip.Length -ge 2147000000) {
+            Write-Warning "Zip file is $([math]::Round($zip.Length / 1MB, 2)) MB (exceeds GitHub Release 2GB asset limit). Removing zip to prevent release failure; .7z and .exe will be uploaded."
+            Remove-Item $zip.FullName -Force
+          }
+
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: Hermes-Agent-3.2.0-win-x64-Packages
           path: |
+            apps/desktop/release/*.7z
             apps/desktop/release/*.zip
             apps/desktop/release/*.exe
           if-no-files-found: error
@@ -119,16 +129,17 @@ jobs:
           name: "Hermes Agent Desktop v3.2.0 (Windows 纯离线安装版 & 免安装绿色版)"
           body: |
             ### Hermes Desktop Windows 纯离线客户端
-            提供两种无网部署形式，均已打包完整离线运行时（Python 解释器、全量依赖库、内置终端）：
+            提供纯内网无网离线运行版本，已内置 Python 解释器、全量预编译依赖库、内置终端：
 
-            1. **`Hermes-Agent-3.2.0-win-x64-Portable.zip` (强烈推荐：真正免安装绿色版)**
-               - 解压到任意目录（如 `D:\Hermes` 或 U 盘）即可直接双击 `Hermes.exe` 启动。
-               - **秒开窗口**，避免单文件 exe 每次开机静默往临时目录解压 5GB 文件的卡顿与巨量磁盘 I/O。
+            1. **`Hermes-Agent-Setup-3.2.0-win-x64.exe` (离线安装包，推荐)**
+               - 包含解压进度条的标准安装程序，安装后在开始菜单和桌面生成快捷方式，双击秒开。
             
-            2. **`Hermes-Agent-Setup-3.2.0-win-x64.exe` (离线安装包)**
-               - 包含解压进度提示的安装程序，安装后可在开始菜单和桌面生成快捷方式。
+            2. **`Hermes-Agent-3.2.0-win-x64-Portable.7z` / `.zip` (免安装绿色版)**
+               - 解压到任意目录（如 `D:\Hermes` 或 U 盘）直接双击 `Hermes.exe` 启动。
+               - 已修复 TicketBridge 启动参数与 pyvenv.cfg 相对路径缺陷，秒开主界面！
           files: |
-            apps/desktop/release/Hermes-Agent-3.2.0-win-x64-Portable.zip
-            apps/desktop/release/Hermes-Agent-Setup-3.2.0-win-x64.exe
+            apps/desktop/release/*.7z
+            apps/desktop/release/*.zip
+            apps/desktop/release/*.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

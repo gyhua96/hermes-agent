@@ -273,6 +273,13 @@ def _prepare_native(*, out: Path, ref: str, source: Path, cache: Path,
     site = dependency_site(venv_dir, python_fact["version"], current_target())
     (site / "hermes-agent.pth").write_text(
         Path(os.path.relpath(repo_dir, site)).as_posix() + "\n", encoding="utf-8")
+    venv_cfg = venv_dir / "pyvenv.cfg"
+    if venv_cfg.is_file():
+        cfg_lines = venv_cfg.read_text(encoding="utf-8-sig").splitlines()
+        cfg_lines = [l for l in cfg_lines if l.partition("=")[0].strip() not in
+                     {"home", "executable", "base-executable", "base-prefix", "base-exec-prefix", "command"}]
+        cfg_lines.insert(0, f"home = {os.path.relpath(python_bin.parent, venv_dir)}")
+        venv_cfg.write_text("\n".join(cfg_lines) + "\n", encoding="utf-8")
     from scripts.bundles.payload import relativize_links
     relativize_links(out)
     from scripts.bundles.bytecode import bake_bytecode
